@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Spreadsheet Ripple</title>
+
+<style>
+html, body {
+  margin: 0;
+  background: transparent;
+  overflow: hidden;
+}
+
+.hero-crop {
+  position: relative;
+  width: 100%;
+  height: 375px;
+  overflow: hidden;
+  background: transparent;
+}
+
+.hero-stage {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 900px; /* tall scene, cropped by parent */
+  pointer-events: none;
+}
+
+canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+</style>
+</head>
+
+<body>
+<div class="hero-crop">
+  <div class="hero-stage">
+    <canvas id="c"></canvas>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+/* ==== Animation params ==== */
+const scrollSpeed = -0.14;
+const speed1 = -0.8;
+const freq1  = 2.5;
+const amp1   = 0.08;
+
+const subdivX = 220, subdivY = 110;
+const CAMERA_FOV = 28;
+const CAMERA_POS = { x:0, y:2.35, z:3.85 };
+const CAMERA_LOOK= { x:0, y:0.25, z:0 };
+const MESH_SCALE = 1.32;
+const MESH_Y_SHIFT = -0.62;
+
+const FLAT_BOTTOM_START = -0.15;
+const FLAT_BOTTOM_END   = -1.0;
+
+function smoothstep(a,b,x){
+  const t=Math.max(0,Math.min(1,(x-a)/(b-a)));
+  return t*t*(3-2*t);
+}
+
+/* ==== Renderer ==== */
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, alpha:true, antialias:true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+renderer.setClearColor(0x000000,0);
+
+const scene = new THREE.Scene();
+scene.background = null;
+
+const camera = new THREE.PerspectiveCamera(CAMERA_FOV,1,0.1,100);
+camera.position.set(CAMERA_POS.x,CAMERA_POS.y,CAMERA_POS.z);
+camera.lookAt(CAMERA_LOOK.x,CAMERA_LOOK.y,CAMERA_LOOK.z);
+
+function resize(){
+  const w = canvas.clientWidth;
+  const h = canvas.clientHeight;
+  renderer.setSize(w,h,false);
+  camera.aspect = w/h;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize',resize);
+
+/* ==== Build table texture ==== */
+const tableCanvas=document.createElement('canvas');
+tableCanvas.width=2048;
+tableCanvas.height=1024;
+const ctx=tableCanvas.getContext('2d');
+
+ctx.fillStyle='#242424';
+ctx.fillRect(0,0,2048,1024);
+
+ctx.strokeStyle='#fff';
+ctx.lineWidth=3;
+
+const cols=9, rows=13;
+const cellW=2048/cols, cellH=1024/rows;
+
+for(let i=0;i<=cols;i++){
+  ctx.beginPath();
+  ctx.moveTo(i*cellW,0);
+  ctx.lineTo(i*cellW,1024);
+  ctx.stroke();
+}
+for(let j=0;j<=rows;j++){
+  ctx.beginPath();
+  ctx.moveTo(0,j*cellH);
+  ctx.lineTo(2048,j*cellH);
+  ctx.stroke();
+}
+
+ctx.fillStyle='#fff';
+ctx.textBaseline='middle';
+ctx.font='bold 48px sans-serif';
+['Product','Sku','Units','Qty','Price','Net','Tax %','Tax Amt','Tot']
+.forEach((t,i)=>ctx.fillText(t,(i+0.5)*cellW,0.5*cellH));
+
+ctx.font='36px sans-serif';
+for(let r=1;r<rows;r++){
+  for(let c=0;c<cols;c++){
+    ctx.fillText('—',(c+0.5)*cellW,(r+0.5)*cellH);
+  }
+}
+
+const tex=new THREE.CanvasTexture(tableCanvas);
+tex.wrapS=THREE.RepeatWrapping;
+tex.repeat.set(3,1);
+
+/* ==== Geometry ==== */
+const geom=new THREE.PlaneGeometry(12,2,subdivX*3,subdivY);
+const orig=geom.attributes.position.array.slice();
+
+const mesh=new THREE.Mesh(
+  geom,
+  new THREE.MeshBasicMaterial({map:tex,side:THREE.DoubleSide,transparent:true})
+);
+mesh.rotation.x=-Math.PI/2;
+mesh.scale.set(MESH_SCALE,MESH_SCALE,MESH_SCALE);
+mesh.position.y=MESH_Y_SHIFT;
+scene.add(mesh);
+
+/* ==== Animate ==== */
+const clock=new THREE.Clock();
+(function animate(){
+  requestAnimationFrame(animate);
+  const t=clock.getElapsedTime();
+  const pos=geom.attributes.position.array;
+
+  for(let i=0;i<pos.length;i+=3){
+    const x=orig[i], y=orig[i+1];
+    const m=smoothstep(FLAT_BOTTOM_END,FLAT_BOTTOM_START,y);
+    pos[i+2]=Math.sin(((x+y)+t*speed1)*freq1)*amp1*m;
+  }
+  geom.attributes.position.needsUpdate=true;
+  tex.offset.x=(( -t*scrollSpeed/tex.repeat.x)%1+1)%1;
+  renderer.render(scene,camera);
+})();
+resize();
+</script>
+</body>
+</html>
