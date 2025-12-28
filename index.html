@@ -1,22 +1,40 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Rippling Spreadsheet Hero (Loop-ready, Transparent, Cropped)</title>
-  <style>
-    html, body { margin: 0; background: transparent; }
+  <title>Spreadsheet Ripple Embed</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    .hero-anim{
+  <style>
+    /* Ensure true transparency everywhere */
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: transparent;
+      overflow: hidden;
+    }
+
+    /* Outer crop container (what Google Sites sees) */
+    .embed-crop {
       position: relative;
       width: 100%;
-      height: 375px;       /* required height at 100% */
+      height: 375px;
       overflow: hidden;
-      pointer-events: none;
       background: transparent;
     }
 
-    #c{
+    /* Animation container */
+    .hero-anim {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;               /* anchor to bottom */
+      height: 375px;
+      background: transparent;
+      pointer-events: none;
+    }
+
+    canvas {
       position: absolute;
       inset: 0;
       width: 100%;
@@ -27,8 +45,10 @@
 </head>
 
 <body>
-  <div class="hero-anim">
-    <canvas id="c"></canvas>
+  <div class="embed-crop">
+    <div class="hero-anim">
+      <canvas id="c"></canvas>
+    </div>
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -42,36 +62,32 @@
     const subdivX = 220, subdivY = 110;
 
     // ===== Camera / framing =====
-    const CAMERA_FOV   = 28 ; // was 20 (slightly zoomed in)
+    const CAMERA_FOV   = 28;
     const CAMERA_POS   = { x: 0, y: 2.35, z: 3.85 };
     const CAMERA_LOOK  = { x: 0, y: 0.25, z: 0 };
 
     const MESH_SCALE   = 1.32;
-    const MESH_Y_SHIFT = -0.62; // push down so you mainly see wave tops
+    const MESH_Y_SHIFT = -0.62;
 
-    // ===== Ensure bottom is flat for clean crop =====
-    const FLAT_BOTTOM_START = -0.15;  // flatten begins
-    const FLAT_BOTTOM_END   = -1.00;  // fully flat by here
+    // ===== Bottom flatten =====
+    const FLAT_BOTTOM_START = -0.15;
+    const FLAT_BOTTOM_END   = -1.0;
 
-    function smoothstep(edge0, edge1, x){
-      const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
+    function smoothstep(e0, e1, x){
+      const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0)));
       return t * t * (3 - 2 * t);
     }
 
-    // ===== Table styling =====
-    const PAPER_COLOR = '#242424'; // 80% black (20% white)
-
-    const headers = ['Product', 'Sku', 'Units', 'Qty', 'Price', 'Net', 'Tax %', 'Tax Amt', 'Tot'];
-    const headerAlign = ['left', 'center', 'center', 'center', 'right', 'right', 'center', 'right', 'right'];
-    const dataAlign   = ['left', 'center', 'center', 'center', 'right', 'right', 'center', 'right', 'right'];
-
     // ===== Renderer =====
     const canvas = document.getElementById('c');
-    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+    const renderer = new THREE.WebGLRenderer({
+      canvas,
+      antialias: true,
+      alpha: true
+    });
 
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2.5));
     renderer.setClearColor(0x000000, 0);
-    renderer.setClearAlpha(0); // guarantee transparent background
 
     const scene = new THREE.Scene();
     scene.background = null;
@@ -80,11 +96,11 @@
     camera.position.set(CAMERA_POS.x, CAMERA_POS.y, CAMERA_POS.z);
     camera.lookAt(CAMERA_LOOK.x, CAMERA_LOOK.y, CAMERA_LOOK.z);
 
-    function resizeRenderer(){
-      const width = canvas.clientWidth;
-      const height = canvas.clientHeight;
-      renderer.setSize(width, height, false);
-      camera.aspect = width / height;
+    function resize(){
+      const w = canvas.clientWidth;
+      const h = canvas.clientHeight;
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h;
       camera.updateProjectionMatrix();
     }
 
@@ -95,99 +111,64 @@
     tableCanvas.height = H;
     const ctx = tableCanvas.getContext('2d');
 
-    // paper fill
-    ctx.fillStyle = PAPER_COLOR;
+    ctx.fillStyle = '#242424';
     ctx.fillRect(0, 0, W, H);
 
-    const products = [
-      { name: 'Product 1',  vals: ['216321', '2 PK', '50', '38.54',  '1927.00',  '13.0%', '250.51',  '2,177.51'] },
-      { name: 'Product 4',  vals: ['546897', '2 PK', '75', '175.69', '13176.75', '13.0%', '1,712.98','14,889.73'] },
-      { name: 'Product 9',  vals: ['456231', 'KG',   '65', '305.60', '19864.00', '10.0%', '1,986.40','21,850.40'] },
-      { name: 'Product 6',  vals: ['455873', 'KG',   '34', '521.25', '17722.50', '10.0%', '1,772.25','19,494.75'] },
-      { name: 'Product 16', vals: ['456892', 'EA',   '22', '693.96', '15267.12', '0.0%',  '0.00',   '15,267.12'] },
-      { name: 'Product 9',  vals: ['546564', 'KG',   '75', '11.97',  '897.75',   '0.0%',  '0.00',   '897.75'] },
-      { name: 'Product 12', vals: ['789455', 'EA',   '7',  '528.25', '3697.75',  '20.0%', '739.55', '4,437.30'] },
-      { name: 'Product 18', vals: ['123002', 'CASE 24','31','216.00','6696.00',  '10.0%', '669.60', '7,365.60'] },
-      { name: 'Product 6',  vals: ['564896', 'CASE 24','2', '707.39','1414.78',  '20.0%', '282.96', '1,697.74'] },
-      { name: 'Product E1', vals: ['E-7765', '12 PK', '21','77.11',  '1619.31',  '20.0%', '323.86', '1,943.17'] },
-      { name: 'Product L1', vals: ['L-12901','144 PK','33','821.84', '27120.72', '10.0%', '2,712.07','29,832.79'] },
-      { name: 'Product L2', vals: ['L-66509','12 PK', '64','717.2',  '45900.80', '10.0%', '4,590.08','50,490.88'] }
-    ];
-
-    const cols = headers.length;
-    const rows = products.length + 1;
-    const cellW = W / cols;
+    const headers = ['Product','Sku','Units','Qty','Price','Net','Tax %','Tax Amt','Tot'];
+    const rows = 13;
+    const cellW = W / headers.length;
     const cellH = H / rows;
 
-    // Gridlines: pure white
-    ctx.strokeStyle = 'rgba(255,255,255,1)';
+    ctx.strokeStyle = '#fff';
     ctx.lineWidth = 3;
-    for (let i = 0; i <= cols; i++){
-      const x = i * cellW;
-      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+
+    for (let i=0;i<=headers.length;i++){
+      ctx.beginPath();
+      ctx.moveTo(i*cellW,0);
+      ctx.lineTo(i*cellW,H);
+      ctx.stroke();
     }
-    for (let j = 0; j <= rows; j++){
-      const y = j * cellH;
-      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    for (let j=0;j<=rows;j++){
+      ctx.beginPath();
+      ctx.moveTo(0,j*cellH);
+      ctx.lineTo(W,j*cellH);
+      ctx.stroke();
     }
 
-    // Text: pure white
-    ctx.fillStyle = 'rgba(255,255,255,1)';
+    ctx.fillStyle = '#fff';
     ctx.textBaseline = 'middle';
-
     ctx.font = 'bold 48px sans-serif';
-    headers.forEach((txt, i) => {
-      const align = headerAlign[i];
-      ctx.textAlign = align;
-      let x = (i + 0.5) * cellW;
-      if (align === 'left')  x = i * cellW + 0.1 * cellW;
-      if (align === 'right') x = (i + 1) * cellW - 0.1 * cellW;
-      ctx.fillText(txt, x, 0.5 * cellH);
+
+    headers.forEach((h,i)=>{
+      ctx.textAlign = i===0?'left':'center';
+      const x = i===0? i*cellW+0.1*cellW:(i+0.5)*cellW;
+      ctx.fillText(h,x,0.5*cellH);
     });
 
     ctx.font = '36px sans-serif';
-    products.forEach((row, r) => {
-      const align0 = dataAlign[0];
-      ctx.textAlign = align0;
-      let x0 = align0 === 'left' ? 0.1 * cellW : align0 === 'right' ? 0.9 * cellW : 0.5 * cellW;
-      ctx.fillText(row.name, x0, (r + 1.5) * cellH);
+    for(let r=1;r<rows;r++){
+      ctx.textAlign='left';
+      ctx.fillText(`Product ${r}`,0.1*cellW,(r+0.5)*cellH);
+    }
 
-      row.vals.forEach((val, vi) => {
-        const ci = vi + 1;
-        const align = dataAlign[ci];
-        ctx.textAlign = align;
-        let x = (ci + 0.5) * cellW;
-        if (align === 'left')  x = ci * cellW + 0.1 * cellW;
-        if (align === 'right') x = (ci + 1) * cellW - 0.1 * cellW;
-        ctx.fillText(val, x, (r + 1.5) * cellH);
-      });
-    });
+    const texture = new THREE.CanvasTexture(tableCanvas);
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.repeat.set(3,1);
+    texture.minFilter = THREE.LinearMipmapLinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
 
-    // ===== Texture =====
-    const tableTexture = new THREE.CanvasTexture(tableCanvas);
-    tableTexture.wrapS = THREE.RepeatWrapping;
-    tableTexture.wrapT = THREE.ClampToEdgeWrapping;
+    // ===== Geometry =====
+    const geom = new THREE.PlaneBufferGeometry(12,2,subdivX*3,subdivY);
+    const base = geom.attributes.position.array.slice();
 
-    tableTexture.generateMipmaps = true;
-    tableTexture.minFilter = THREE.LinearMipmapLinearFilter;
-    tableTexture.magFilter = THREE.LinearFilter;
-    tableTexture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    const mesh = new THREE.Mesh(
+      geom,
+      new THREE.MeshBasicMaterial({ map:texture, transparent:true, side:THREE.DoubleSide })
+    );
 
-    tableTexture.repeat.set(3, 1);
-
-    // ===== Geometry + Material =====
-    const geom = new THREE.PlaneBufferGeometry(12, 2, subdivX * 3, subdivY);
-    const origPos = geom.attributes.position.array.slice();
-
-    const mat = new THREE.MeshBasicMaterial({
-      map: tableTexture,
-      transparent: true,
-      side: THREE.DoubleSide
-    });
-
-    const mesh = new THREE.Mesh(geom, mat);
-    mesh.rotation.x = -Math.PI / 2;
-    mesh.scale.set(MESH_SCALE, MESH_SCALE, MESH_SCALE);
+    mesh.rotation.x = -Math.PI/2;
+    mesh.scale.set(MESH_SCALE,MESH_SCALE,MESH_SCALE);
     mesh.position.y = MESH_Y_SHIFT;
     scene.add(mesh);
 
@@ -196,27 +177,23 @@
     function animate(){
       requestAnimationFrame(animate);
       const t = clock.getElapsedTime();
-
       const pos = geom.attributes.position.array;
-      for (let i = 0; i < pos.length; i += 3){
-        const x = origPos[i];
-        const y = origPos[i + 1];
 
-        // Mask wave near bottom to ensure a perfectly flat crop edge
-        const waveMask = smoothstep(FLAT_BOTTOM_END, FLAT_BOTTOM_START, y);
-
-        pos[i + 2] = Math.sin(((x + y) + t * speed1) * freq1) * amp1 * waveMask;
+      for(let i=0;i<pos.length;i+=3){
+        const x = base[i];
+        const y = base[i+1];
+        const mask = smoothstep(FLAT_BOTTOM_END, FLAT_BOTTOM_START, y);
+        pos[i+2] = Math.sin(((x+y)+t*speed1)*freq1)*amp1*mask;
       }
+
       geom.attributes.position.needsUpdate = true;
-
-      tableTexture.offset.x = ((-t * scrollSpeed / tableTexture.repeat.x) % 1 + 1) % 1;
-
-      renderer.render(scene, camera);
+      texture.offset.x = ((-t*scrollSpeed/texture.repeat.x)%1+1)%1;
+      renderer.render(scene,camera);
     }
 
-    resizeRenderer();
+    resize();
     animate();
-    window.addEventListener('resize', resizeRenderer);
+    window.addEventListener('resize', resize);
   </script>
 </body>
 </html>
